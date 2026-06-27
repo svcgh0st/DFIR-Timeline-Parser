@@ -1,0 +1,52 @@
+# Generated parser outputs
+Output/
+Outputs/
+output/
+outputs/
+*.csv
+*.log
+*.jsonl
+
+# Local EZ Tools and downloaded runtimes
+ez/
+ez8/
+EZTools/
+Tools/
+work/
+*.zip
+*.tar.gz
+*.7z
+
+# Local/generated configuration
+DFIR-Timeline-Parser.config.json
+
+# Evidence/acquisition folders and forensic artifacts
+C/
+Evidence/
+Acquisition/
+KAPE/
+$MFT
+$LogFile
+$Extend/
+$Recycle.Bin/
+*.evtx
+*.pf
+*.hve
+NTUSER.DAT
+UsrClass.dat
+SYSTEM
+SOFTWARE
+SAM
+SECURITY
+
+# PowerShell/editor/temp files
+*.ps1xml
+*.psd1.tmp
+*.psm1.tmp
+*.tmp
+*.temp
+*.bak
+*.swp
+~$*
+.vscode/
+.idea/
