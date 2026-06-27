@@ -50,10 +50,6 @@ $script:Artifacts = [ordered]@{
     ScheduledTasks      = [pscustomobject]@{ Label = 'Scheduled Tasks'; Default = $false; Tool = 'RECmd.exe';          Group = 'Optional' }
     Srum                = [pscustomobject]@{ Label = 'SRUM'; Default = $false; Tool = 'SrumECmd.exe';                  Group = 'Optional' }
     RecycleBin          = [pscustomobject]@{ Label = 'Recycle Bin'; Default = $false; Tool = 'RBCmd.exe';              Group = 'Optional' }
-    BrowserHistory      = [pscustomobject]@{ Label = 'Browser history'; Default = $false; Tool = $null;                Group = 'Optional' }
-    WindowsSearch       = [pscustomobject]@{ Label = 'Windows Search database'; Default = $false; Tool = $null;        Group = 'Optional' }
-    PowerShellHistory   = [pscustomobject]@{ Label = 'PowerShell history'; Default = $false; Tool = $null;             Group = 'Optional' }
-    WmiPersistence      = [pscustomobject]@{ Label = 'WMI persistence artifacts'; Default = $false; Tool = $null;      Group = 'Optional' }
 }
 
 # Writes a timestamped line to the GUI and to the active run log.
@@ -668,31 +664,6 @@ function Get-RegistryHivePaths {
     }
 }
 
-# Handles artifacts that can be located but are intentionally not parsed without an EZ command-line parser.
-function Invoke-UnsupportedArtifact {
-    param(
-        [Parameter(Mandatory)][string]$ArtifactKey,
-        [Parameter()][string[]]$LocatedPaths = @(),
-        [Parameter(Mandatory)][string]$Reason
-    )
-
-    $label = $script:Artifacts[$ArtifactKey].Label
-    $artifactOutput = Get-ArtifactOutputDirectory -ArtifactKey $ArtifactKey
-    $notePath = Join-Path $artifactOutput 'NOT_PARSED.txt'
-
-    Write-FoundPaths -Artifact $label -Paths $LocatedPaths
-    Write-Status -Level 'WARN' -Message "$label was not parsed: $Reason"
-    Set-Content -LiteralPath $notePath -Encoding UTF8 -Value @(
-        "$label was selected but not parsed.",
-        "Reason: $Reason",
-        '',
-        'Located paths:',
-        ($LocatedPaths -join [Environment]::NewLine)
-    )
-
-    Add-ArtifactResult -Artifact $label -Status 'Not parsed' -Found ($LocatedPaths.Count) -Parsed 0 -Detail $Reason
-}
-
 # Downloads and runs Eric Zimmerman's official updater into the selected tools folder only.
 function Invoke-EzToolsDownload {
     param(
@@ -936,25 +907,6 @@ function Invoke-SelectedParsing {
                 'RecycleBin' {
                     $paths = Find-ArtifactDirectories -TargetRoot $TargetRoot -RelativeCandidates @('$Recycle.Bin') -DirectoryNames @('$Recycle.Bin')
                     Invoke-FileParser -ArtifactKey $key -ToolName 'RBCmd.exe' -Paths $paths -ArgumentBuilder { param($path, $out) @('-d', $path, '--csv', $out) }
-                }
-                'BrowserHistory' {
-                    $paths = Find-ArtifactFiles -TargetRoot $TargetRoot -FileNames @('History', 'places.sqlite', 'WebCacheV01.dat')
-                    Invoke-UnsupportedArtifact -ArtifactKey $key -LocatedPaths $paths -Reason 'No dependable Eric Zimmerman command-line browser-history parser is configured in this tool. Manual parsing is intentionally avoided.'
-                }
-                'WindowsSearch' {
-                    $paths = Find-ArtifactFiles -TargetRoot $TargetRoot -FileNames @('Windows.edb', 'Windows.db', 'Windows-gather.db', 'Windows-usn.db')
-                    Invoke-UnsupportedArtifact -ArtifactKey $key -LocatedPaths $paths -Reason 'Windows Search databases require an ESE/search-specific parser outside the configured EZ command set. Manual parsing is intentionally avoided.'
-                }
-                'PowerShellHistory' {
-                    $paths = Find-ArtifactFiles -TargetRoot $TargetRoot -FileNames @('ConsoleHost_history.txt')
-                    Invoke-UnsupportedArtifact -ArtifactKey $key -LocatedPaths $paths -Reason 'PowerShell history is plain text and has no configured Eric Zimmerman CSV parser here. Manual parsing/copying is intentionally avoided.'
-                }
-                'WmiPersistence' {
-                    $paths = Find-ArtifactFiles -TargetRoot $TargetRoot -RelativeCandidates @(
-                        'Windows\System32\wbem\Repository\OBJECTS.DATA',
-                        'Windows\System32\wbem\Repository\INDEX.BTR'
-                    ) -FileNames @('OBJECTS.DATA', 'INDEX.BTR')
-                    Invoke-UnsupportedArtifact -ArtifactKey $key -LocatedPaths $paths -Reason 'WMI repository parsing is not handled by the configured EZ command-line parsers. Manual parsing is intentionally avoided.'
                 }
             }
         }

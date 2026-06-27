@@ -69,6 +69,18 @@ CustomEvtx
 
 inside the selected output folder.
 
+## Artifact Tool Coverage
+
+Every GUI checkbox maps to a configured Eric Zimmerman command-line tool. Locate-only options without a configured EZ parser, including browser history, Windows Search, PowerShell console history, and WMI repository parsing, are intentionally not exposed as artifact checkboxes.
+
+Optional parser mappings:
+
+- LNK files: `LECmd.exe`
+- Jump Lists: `JLECmd.exe`
+- Shellbags, RecentDocs, UserAssist, Run keys, Services, and Scheduled Tasks registry data: `RECmd.exe`
+- SRUM: `SrumECmd.exe`
+- Recycle Bin: `RBCmd.exe`
+
 ## MFT Note
 
 For large `$MFT` files, use the `ez` tools folder, not `ez8`.
