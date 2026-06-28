@@ -79,9 +79,9 @@ inside the selected output folder.
 
 ## Artifact Tool Coverage
 
-Every GUI checkbox maps to a configured Eric Zimmerman command-line tool. Locate-only options without a configured EZ parser, including browser history, Windows Search, PowerShell console history, and WMI repository parsing, are intentionally not exposed as artifact checkboxes.
+Every GUI checkbox maps to a configured Eric Zimmerman command-line tool. Options without a configured parser are not exposed as artifact checkboxes.
 
-Optional parser mappings:
+Optional checkbox mappings:
 
 - LNK files: `LECmd.exe`
 - Jump Lists: `JLECmd.exe`
