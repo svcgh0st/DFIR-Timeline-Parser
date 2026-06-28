@@ -25,6 +25,7 @@ if ([string]::IsNullOrWhiteSpace($script:DefaultOutputPath)) {
 $script:ConfigPath = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) { Join-Path $PSScriptRoot 'DFIR-Timeline-Parser.config.json' } else { Join-Path $script:WorkspaceRoot 'DFIR-Timeline-Parser.config.json' }
 $script:LogFile = $null
 $script:CurrentOutputRoot = $null
+$script:LastRunOutputRoot = $null
 $script:ArtifactResults = New-Object System.Collections.Generic.List[object]
 $script:CurrentTools = @{}
 
@@ -182,6 +183,24 @@ function ConvertTo-SafeName {
         $safe = $safe.Replace($char, '_')
     }
     return ($safe -replace '\s+', '_').Trim('_')
+}
+
+# Creates a timestamped run folder inside the selected output destination.
+function New-RunOutputRoot {
+    param([Parameter(Mandatory)][string]$OutputDestination)
+
+    $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $baseName = 'DFIR-Timeline-Parser_{0}' -f $stamp
+    $runRoot = Join-Path $OutputDestination $baseName
+    $suffix = 1
+
+    while (Test-Path -LiteralPath $runRoot) {
+        $runRoot = Join-Path $OutputDestination ('{0}_{1:D2}' -f $baseName, $suffix)
+        $suffix++
+    }
+
+    New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
+    return $runRoot
 }
 
 # Returns a short stable hash for path-derived output folder names.
@@ -724,16 +743,19 @@ function Invoke-SelectedParsing {
         [Parameter()][AllowNull()][string[]]$CustomEvtxPaths
     )
 
-    $script:ArtifactResults.Clear()
-    $script:CurrentOutputRoot = $OutputRoot
     New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
+    $runOutputRoot = New-RunOutputRoot -OutputDestination $OutputRoot
+    $script:ArtifactResults.Clear()
+    $script:CurrentOutputRoot = $runOutputRoot
+    $script:LastRunOutputRoot = $runOutputRoot
 
-    $script:LogFile = Join-Path $OutputRoot ('DFIR-Timeline-Parser_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+    $script:LogFile = Join-Path $runOutputRoot ('DFIR-Timeline-Parser_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 
     Write-Status -Message "Start time: $(Get-Date -Format 'o')"
     Write-Status -Message "Target root: $TargetRoot"
-    Write-Status -Message "Output root: $OutputRoot"
+    Write-Status -Message "Output destination: $OutputRoot"
+    Write-Status -Message "Run output folder: $runOutputRoot"
     Write-Status -Message "EZ Tools root: $ToolsRoot"
     Write-Status -Message ("Selected artifacts: {0}" -f (($SelectedArtifactKeys | ForEach-Object { $script:Artifacts[$_].Label }) -join ', '))
     if ($SelectedArtifactKeys -contains 'CustomEvtx') {
@@ -918,7 +940,7 @@ function Invoke-SelectedParsing {
     }
 
     Write-Status -Message "Completion time: $(Get-Date -Format 'o')"
-    $summaryPath = Join-Path $OutputRoot 'DFIR-Timeline-Parser_Summary.csv'
+    $summaryPath = Join-Path $runOutputRoot 'DFIR-Timeline-Parser_Summary.csv'
     $script:ArtifactResults | Export-Csv -LiteralPath $summaryPath -NoTypeInformation -Encoding UTF8
     Write-Status -Level 'SUCCESS' -Message "Summary written to $summaryPath"
 }
@@ -1243,11 +1265,18 @@ function New-ParserForm {
     })
 
     $script:btnOpenOutput.Add_Click({
-        if ([string]::IsNullOrWhiteSpace($script:txtOutput.Text) -or -not (Test-Path -LiteralPath $script:txtOutput.Text)) {
+        $folderToOpen = if (-not [string]::IsNullOrWhiteSpace($script:LastRunOutputRoot) -and (Test-Path -LiteralPath $script:LastRunOutputRoot)) {
+            $script:LastRunOutputRoot
+        }
+        else {
+            $script:txtOutput.Text
+        }
+
+        if ([string]::IsNullOrWhiteSpace($folderToOpen) -or -not (Test-Path -LiteralPath $folderToOpen)) {
             [System.Windows.Forms.MessageBox]::Show('Choose an existing output folder first.', 'Output Folder', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
             return
         }
-        Start-Process -FilePath explorer.exe -ArgumentList (Join-WindowsCommandLine -Arguments @($script:txtOutput.Text))
+        Start-Process -FilePath explorer.exe -ArgumentList (Join-WindowsCommandLine -Arguments @($folderToOpen))
     })
 
     $script:btnDownload.Add_Click({
@@ -1356,7 +1385,7 @@ function New-ParserForm {
 
             $success = ($script:ArtifactResults | Where-Object { $_.Status -eq 'Parsed' }).Count
             $problem = ($script:ArtifactResults | Where-Object { $_.Status -ne 'Parsed' }).Count
-            $summary = "Parsing complete.`r`n`r`nParsed: $success`r`nWarnings/failures/not parsed: $problem`r`n`r`nLog file:`r`n$script:LogFile"
+            $summary = "Parsing complete.`r`n`r`nParsed: $success`r`nWarnings/failures/not parsed: $problem`r`n`r`nOutput folder:`r`n$script:CurrentOutputRoot`r`n`r`nLog file:`r`n$script:LogFile"
             [System.Windows.Forms.MessageBox]::Show($summary, 'Parsing Complete', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
             $script:lblStatus.Text = 'Parsing complete.'
         }
