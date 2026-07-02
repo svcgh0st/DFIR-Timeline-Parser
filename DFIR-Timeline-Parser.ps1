@@ -1,4 +1,4 @@
-#requires -version 5.1
+﻿#requires -version 5.1
 <#
     DFIR-Timeline-Parser.ps1
 
@@ -28,6 +28,19 @@ $script:CurrentOutputRoot = $null
 $script:LastRunOutputRoot = $null
 $script:ArtifactResults = New-Object System.Collections.Generic.List[object]
 $script:CurrentTools = @{}
+$script:Theme = [ordered]@{
+    Background = [System.Drawing.Color]::FromArgb(247, 245, 241)
+    Panel      = [System.Drawing.Color]::FromArgb(250, 248, 244)
+    PanelAlt   = [System.Drawing.Color]::FromArgb(239, 235, 228)
+    Input      = [System.Drawing.Color]::FromArgb(255, 254, 251)
+    Border     = [System.Drawing.Color]::FromArgb(218, 212, 202)
+    Text       = [System.Drawing.Color]::FromArgb(15, 15, 15)
+    Muted      = [System.Drawing.Color]::FromArgb(46, 46, 46)
+    Accent     = [System.Drawing.Color]::FromArgb(214, 72, 34)
+    AccentDark = [System.Drawing.Color]::FromArgb(191, 60, 28)
+    Danger     = [System.Drawing.Color]::FromArgb(242, 219, 211)
+    Success    = [System.Drawing.Color]::FromArgb(221, 235, 225)
+}
 
 $script:Artifacts = [ordered]@{
     MFT                 = [pscustomobject]@{ Label = '$MFT'; Default = $true;  Tool = 'MFTECmd.exe';                Group = 'Default' }
@@ -37,6 +50,7 @@ $script:Artifacts = [ordered]@{
     EvtxSysmon          = [pscustomobject]@{ Label = 'EVTX - Sysmon Operational'; Default = $true; Tool = 'EvtxECmd.exe'; Group = 'Default' }
     EvtxDefender        = [pscustomobject]@{ Label = 'EVTX - Windows Defender Operational'; Default = $true; Tool = 'EvtxECmd.exe'; Group = 'Default' }
     EvtxRdp             = [pscustomobject]@{ Label = 'EVTX - RDP / Terminal Services logs'; Default = $true; Tool = 'EvtxECmd.exe'; Group = 'Default' }
+    EvtxAll             = [pscustomobject]@{ Label = 'EVTX - All logs folder'; Default = $false; Tool = 'EvtxECmd.exe'; Group = 'Optional' }
     CustomEvtx          = [pscustomobject]@{ Label = 'EVTX - Custom file/folder'; Default = $false; Tool = 'EvtxECmd.exe'; Group = 'Optional' }
     Prefetch            = [pscustomobject]@{ Label = 'Prefetch'; Default = $true; Tool = 'PECmd.exe';                 Group = 'Default' }
     ShimCache           = [pscustomobject]@{ Label = 'ShimCache from SYSTEM hive'; Default = $true; Tool = 'AppCompatCacheParser.exe'; Group = 'Default' }
@@ -51,6 +65,7 @@ $script:Artifacts = [ordered]@{
     ScheduledTasks      = [pscustomobject]@{ Label = 'Scheduled Tasks'; Default = $false; Tool = 'RECmd.exe';          Group = 'Optional' }
     Srum                = [pscustomobject]@{ Label = 'SRUM'; Default = $false; Tool = 'SrumECmd.exe';                  Group = 'Optional' }
     RecycleBin          = [pscustomobject]@{ Label = 'Recycle Bin'; Default = $false; Tool = 'RBCmd.exe';              Group = 'Optional' }
+    BrowserHistory      = [pscustomobject]@{ Label = 'Browser history'; Default = $true;  Tool = $null;                Group = 'Optional' }
 }
 
 # Writes a timestamped line to the GUI and to the active run log.
@@ -185,6 +200,94 @@ function ConvertTo-SafeName {
     return ($safe -replace '\s+', '_').Trim('_')
 }
 
+# Applies consistent dark DFIR workstation styling to buttons.
+function Set-ButtonTheme {
+    param([Parameter(Mandatory)][System.Windows.Forms.Button]$Button)
+
+    $theme = $script:Theme
+    $Button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $Button.UseVisualStyleBackColor = $false
+    $Button.ForeColor = $theme.Text
+    $Button.Font = New-Object System.Drawing.Font($Button.Font.FontFamily, $Button.Font.Size, [System.Drawing.FontStyle]::Regular)
+    $Button.FlatAppearance.BorderColor = $theme.Border
+    $Button.FlatAppearance.BorderSize = 1
+    $Button.FlatAppearance.MouseOverBackColor = $theme.PanelAlt
+    $Button.FlatAppearance.MouseDownBackColor = $theme.AccentDark
+
+    if ($Button.Text -eq 'Start Parsing') {
+        $Button.BackColor = $theme.Danger
+        $Button.ForeColor = $theme.Text
+        $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(210, 140, 125)
+        $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(236, 203, 192)
+        $Button.Font = New-Object System.Drawing.Font($Button.Font.FontFamily, $Button.Font.Size, [System.Drawing.FontStyle]::Bold)
+    }
+    elseif ($Button.Text -eq 'Download/Update EZ Tools') {
+        $Button.BackColor = [System.Drawing.Color]::FromArgb(247, 229, 222)
+        $Button.ForeColor = $theme.Text
+        $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(226, 168, 149)
+        $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(241, 211, 201)
+    }
+    elseif ($Button.Text -eq 'Open Output Folder') {
+        $Button.BackColor = $theme.Success
+        $Button.ForeColor = $theme.Text
+        $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(160, 190, 168)
+        $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(209, 228, 214)
+    }
+    else {
+        $Button.BackColor = $theme.PanelAlt
+    }
+}
+
+# Applies the dark theme recursively across the Windows Forms control tree.
+function Set-ControlTheme {
+    param([Parameter(Mandatory)][System.Windows.Forms.Control]$Control)
+
+    $theme = $script:Theme
+
+    if ($Control -is [System.Windows.Forms.Form]) {
+        $Control.BackColor = $theme.Background
+        $Control.ForeColor = $theme.Text
+    }
+    elseif ($Control -is [System.Windows.Forms.GroupBox]) {
+        $Control.BackColor = $theme.Panel
+        $Control.ForeColor = $theme.Text
+        $Control.Font = New-Object System.Drawing.Font($Control.Font.FontFamily, $Control.Font.Size, [System.Drawing.FontStyle]::Bold)
+    }
+    elseif ($Control -is [System.Windows.Forms.TableLayoutPanel] -or $Control -is [System.Windows.Forms.FlowLayoutPanel] -or $Control -is [System.Windows.Forms.Panel]) {
+        $Control.BackColor = $theme.Background
+    }
+    elseif ($Control -is [System.Windows.Forms.Label]) {
+        $Control.BackColor = [System.Drawing.Color]::Transparent
+        $Control.ForeColor = $theme.Muted
+    }
+    elseif ($Control -is [System.Windows.Forms.TextBox]) {
+        $Control.BackColor = $theme.Input
+        $Control.ForeColor = $theme.Text
+        $Control.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        if ($Control.Multiline) {
+            $Control.BackColor = [System.Drawing.Color]::FromArgb(252, 250, 246)
+            $Control.ForeColor = $theme.Text
+        }
+    }
+    elseif ($Control -is [System.Windows.Forms.ListBox]) {
+        $Control.BackColor = $theme.Input
+        $Control.ForeColor = $theme.Text
+        $Control.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    }
+    elseif ($Control -is [System.Windows.Forms.CheckBox]) {
+        $Control.BackColor = $theme.Panel
+        $Control.ForeColor = $theme.Text
+        $Control.FlatStyle = [System.Windows.Forms.FlatStyle]::Standard
+    }
+    elseif ($Control -is [System.Windows.Forms.Button]) {
+        Set-ButtonTheme -Button $Control
+    }
+
+    foreach ($child in $Control.Controls) {
+        Set-ControlTheme -Control $child
+    }
+}
+
 # Creates a timestamped run folder inside the selected output destination.
 function New-RunOutputRoot {
     param([Parameter(Mandatory)][string]$OutputDestination)
@@ -280,7 +383,7 @@ function Invoke-ExternalTool {
 
     New-Item -ItemType Directory -Path $WorkingDirectory -Force | Out-Null
     $processLogBase = if (-not [string]::IsNullOrWhiteSpace($script:CurrentOutputRoot)) { $script:CurrentOutputRoot } else { $WorkingDirectory }
-    $processLogDir = Join-Path $processLogBase '_process_logs'
+    $processLogDir = Join-Path $processLogBase 'Troubleshooting_Logs'
     New-Item -ItemType Directory -Path $processLogDir -Force | Out-Null
 
     $safePrefix = ConvertTo-SafeName -Name $LogPrefix
@@ -496,7 +599,7 @@ function Invoke-FileParser {
         $arguments = & $ArgumentBuilder $path $sourceOutput
         $exitCode = Invoke-ExternalTool -ToolPath $script:CurrentTools[$ToolName] -Arguments $arguments -WorkingDirectory $sourceOutput -LogPrefix "$ArtifactKey-$([System.IO.Path]::GetFileName($path))"
         $csvOutputCount = @(Get-ChildItem -LiteralPath $sourceOutput -Recurse -File -Filter '*.csv' -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -notmatch '\\_process_logs\\' }).Count
+            Where-Object { $_.FullName -notmatch '\\Troubleshooting_Logs\\' }).Count
         if ($exitCode -eq 0) {
             if ($csvOutputCount -gt 0) {
                 $parsed++
@@ -515,6 +618,67 @@ function Invoke-FileParser {
 
     $status = if ($failures -eq 0) { 'Parsed' } elseif ($parsed -gt 0) { 'Partial failure' } else { 'Parser failed' }
     Add-ArtifactResult -Artifact $label -Status $status -Found $Paths.Count -Parsed $parsed -Detail "$failures failure(s)"
+}
+
+# Runs EvtxECmd against the standard Windows event log folder in an offline target.
+function Invoke-AllEvtxParser {
+    param([Parameter(Mandatory)][string]$TargetRoot)
+
+    $artifactKey = 'EvtxAll'
+    $label = $script:Artifacts[$artifactKey].Label
+    $logsFolder = Join-Path $TargetRoot 'Windows\System32\winevt\Logs'
+    $files = @()
+
+    if (Test-Path -LiteralPath $logsFolder -PathType Container) {
+        $files = @(Get-ChildItem -LiteralPath $logsFolder -Recurse -Force -File -Filter '*.evtx' -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty FullName |
+            Sort-Object -Unique)
+    }
+
+    Write-FoundPaths -Artifact $label -Paths $files
+
+    if ($files.Count -eq 0) {
+        Add-ArtifactResult -Artifact $label -Status 'Missing artifact' -Found 0 -Parsed 0 -Detail $logsFolder
+        return
+    }
+
+    if (-not $script:CurrentTools.ContainsKey('EvtxECmd.exe')) {
+        Write-Status -Level 'ERROR' -Message "${label}: missing required tool EvtxECmd.exe."
+        Add-ArtifactResult -Artifact $label -Status 'Missing tool' -Found $files.Count -Parsed 0 -Detail 'EvtxECmd.exe'
+        return
+    }
+
+    $artifactOutput = Get-ArtifactOutputDirectory -ArtifactKey $artifactKey
+    $parsed = 0
+    $failures = 0
+    $fileIndex = 0
+
+    foreach ($file in $files) {
+        $fileIndex++
+        $fileName = [System.IO.Path]::GetFileNameWithoutExtension($file)
+        $sourceOutput = Join-Path $artifactOutput ('EVTX_{0:D4}_{1}' -f $fileIndex, (ConvertTo-SafeName -Name $fileName))
+        New-Item -ItemType Directory -Path $sourceOutput -Force | Out-Null
+
+        $exitCode = Invoke-ExternalTool -ToolPath $script:CurrentTools['EvtxECmd.exe'] -Arguments @('-f', $file, '--csv', $sourceOutput) -WorkingDirectory $sourceOutput -LogPrefix "EvtxAll-$fileName"
+        $csvOutputCount = @(Get-ChildItem -LiteralPath $sourceOutput -Recurse -File -Filter '*.csv' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\Troubleshooting_Logs\\' }).Count
+
+        if ($exitCode -eq 0 -and $csvOutputCount -gt 0) {
+            $parsed++
+            Write-Status -Level 'SUCCESS' -Message "$label parsed successfully: $file"
+        }
+        elseif ($exitCode -eq 0) {
+            $failures++
+            Write-Status -Level 'ERROR' -Message "$label parser returned exit code 0 but did not create CSV output for $file"
+        }
+        else {
+            $failures++
+            Write-Status -Level 'ERROR' -Message "$label parser returned exit code $exitCode for $file"
+        }
+    }
+
+    $status = if ($failures -eq 0) { 'Parsed' } elseif ($parsed -gt 0) { 'Partial failure' } else { 'Parser failed' }
+    Add-ArtifactResult -Artifact $label -Status $status -Found $files.Count -Parsed $parsed -Detail "$failures failure(s)"
 }
 
 # Runs EvtxECmd against analyst-selected EVTX files and folders.
@@ -585,7 +749,7 @@ function Invoke-CustomEvtxParser {
 
         $exitCode = Invoke-ExternalTool -ToolPath $script:CurrentTools['EvtxECmd.exe'] -Arguments @('-f', $file, '--csv', $sourceOutput) -WorkingDirectory $sourceOutput -LogPrefix "CustomEvtx-$fileName"
         $csvOutputCount = @(Get-ChildItem -LiteralPath $sourceOutput -Recurse -File -Filter '*.csv' -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -notmatch '\\_process_logs\\' }).Count
+            Where-Object { $_.FullName -notmatch '\\Troubleshooting_Logs\\' }).Count
 
         if ($exitCode -eq 0 -and $csvOutputCount -gt 0) {
             $parsed++
@@ -639,7 +803,7 @@ function Invoke-RegistryKeysWithRECmd {
             $arguments = @('-f', $hive, '--kn', $key, '--csv', $sourceOutput)
             $exitCode = Invoke-ExternalTool -ToolPath $script:CurrentTools['RECmd.exe'] -Arguments $arguments -WorkingDirectory $sourceOutput -LogPrefix "$ArtifactKey-$sourceName"
             $csvOutputCount = @(Get-ChildItem -LiteralPath $sourceOutput -Recurse -File -Filter '*.csv' -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notmatch '\\_process_logs\\' }).Count
+                Where-Object { $_.FullName -notmatch '\\Troubleshooting_Logs\\' }).Count
             if ($exitCode -eq 0) {
                 if ($csvOutputCount -gt 0) {
                     $parsed++
@@ -680,6 +844,483 @@ function Get-RegistryHivePaths {
         'USRCLASS' {
             return Find-ArtifactFiles -TargetRoot $TargetRoot -FileNames @('UsrClass.dat')
         }
+    }
+}
+
+# Finds a usable Python 3 runtime for the browser history SQLite exporter.
+function Find-PythonRuntime {
+    $candidates = @(
+        [pscustomobject]@{ FilePath = 'py';      TestArgs = @('-3', '--version'); PrefixArgs = @('-3') },
+        [pscustomobject]@{ FilePath = 'python';  TestArgs = @('--version');       PrefixArgs = @() },
+        [pscustomobject]@{ FilePath = 'python3'; TestArgs = @('--version');       PrefixArgs = @() }
+    )
+
+    foreach ($candidate in $candidates) {
+        try {
+            $null = & $candidate.FilePath @($candidate.TestArgs) 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                return $candidate
+            }
+        }
+        catch {
+            continue
+        }
+    }
+
+    return $null
+}
+
+# Locates supported browser history databases below each offline Windows user profile.
+function Find-BrowserHistoryDatabases {
+    param([Parameter(Mandatory)][string]$TargetRoot)
+
+    $usersRoot = Join-Path $TargetRoot 'Users'
+    if (-not (Test-Path -LiteralPath $usersRoot -PathType Container)) {
+        return @()
+    }
+
+    $definitions = @(
+        @{ Browser = 'Chrome';   Engine = 'Chromium'; RelativeGlob = 'AppData\Local\Google\Chrome\User Data\*\History' },
+        @{ Browser = 'Edge';     Engine = 'Chromium'; RelativeGlob = 'AppData\Local\Microsoft\Edge\User Data\*\History' },
+        @{ Browser = 'Brave';    Engine = 'Chromium'; RelativeGlob = 'AppData\Local\BraveSoftware\Brave-Browser\User Data\*\History' },
+        @{ Browser = 'Chromium'; Engine = 'Chromium'; RelativeGlob = 'AppData\Local\Chromium\User Data\*\History' },
+        @{ Browser = 'Vivaldi';  Engine = 'Chromium'; RelativeGlob = 'AppData\Local\Vivaldi\User Data\*\History' },
+        @{ Browser = 'Opera';    Engine = 'Chromium'; RelativeGlob = 'AppData\Roaming\Opera Software\Opera Stable\History' },
+        @{ Browser = 'OperaGX';  Engine = 'Chromium'; RelativeGlob = 'AppData\Roaming\Opera Software\Opera GX Stable\History' },
+        @{ Browser = 'Firefox';  Engine = 'Firefox';  RelativeGlob = 'AppData\Roaming\Mozilla\Firefox\Profiles\*\places.sqlite' }
+    )
+
+    $found = New-Object System.Collections.Generic.List[object]
+    foreach ($user in (Get-ChildItem -LiteralPath $usersRoot -Directory -Force -ErrorAction SilentlyContinue)) {
+        foreach ($definition in $definitions) {
+            $pattern = Join-Path $user.FullName $definition.RelativeGlob
+            foreach ($match in (Get-ChildItem -Path $pattern -File -Force -ErrorAction SilentlyContinue)) {
+                $profile = Split-Path -Path $match.DirectoryName -Leaf
+                if ($definition.Browser -in @('Opera', 'OperaGX')) {
+                    $profile = 'Default'
+                }
+
+                $found.Add([pscustomobject]@{
+                    User               = $user.Name
+                    Browser            = $definition.Browser
+                    Engine             = $definition.Engine
+                    Profile            = $profile
+                    SourceDatabasePath = $match.FullName
+                }) | Out-Null
+            }
+        }
+    }
+
+    return $found.ToArray()
+}
+
+# Returns the embedded Python helper used to export copied browser SQLite databases to CSV.
+function Get-BrowserHistoryExporterSource {
+    return @'
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import csv
+import datetime as dt
+import json
+import sqlite3
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Sequence
+
+HISTORY_FIELDS = [
+    "User", "Browser", "VisitTimeUtc", "Url", "Title", "VisitCount", "TypedCount",
+    "Transition", "VisitDurationSeconds", "Hidden", "SourceDatabase", "SourceRowId", "Notes",
+]
+
+DOWNLOAD_FIELDS = [
+    "User", "Browser", "Time", "DownloadUrl", "TabUrl", "ReferrerUrl", "TargetPath", "CurrentPath",
+]
+
+COMBINED_FIELDS = [
+    "RecordType", "User", "Browser", "Time", "Url", "TitleOrPath", "Details",
+    "SourceDatabase", "SourceRowId", "Notes",
+]
+
+def iso_utc(timestamp: dt.datetime | None) -> str:
+    if timestamp is None:
+        return ""
+    return timestamp.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+def chrome_time(value: Any) -> str:
+    if value in (None, "", 0, "0"):
+        return ""
+    try:
+        microseconds = int(value)
+        if microseconds <= 0:
+            return ""
+        return iso_utc(dt.datetime(1601, 1, 1, tzinfo=dt.timezone.utc) + dt.timedelta(microseconds=microseconds))
+    except (OverflowError, ValueError, TypeError):
+        return ""
+
+def firefox_time(value: Any) -> str:
+    if value in (None, "", 0, "0"):
+        return ""
+    try:
+        microseconds = int(value)
+        if microseconds <= 0:
+            return ""
+        return iso_utc(dt.datetime.fromtimestamp(microseconds / 1_000_000, tz=dt.timezone.utc))
+    except (OverflowError, OSError, ValueError, TypeError):
+        return ""
+
+def firefox_millis_time(value: Any) -> str:
+    if value in (None, "", 0, "0"):
+        return ""
+    try:
+        milliseconds = int(value)
+        if milliseconds <= 0:
+            return ""
+        return iso_utc(dt.datetime.fromtimestamp(milliseconds / 1_000, tz=dt.timezone.utc))
+    except (OverflowError, OSError, ValueError, TypeError):
+        return ""
+
+def connect_database(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only = ON")
+    return conn
+
+def table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone()
+    return row is not None
+
+def columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    if not table_exists(conn, table):
+        return set()
+    return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+def select_expr(available: set[str], column: str, alias: str | None = None) -> str:
+    alias = alias or column
+    if column in available:
+        return f"{column} AS {alias}"
+    return f"NULL AS {alias}"
+
+def get_value(row: sqlite3.Row, key: str, default: Any = "") -> Any:
+    try:
+        value = row[key]
+    except (KeyError, IndexError):
+        return default
+    return default if value is None else value
+
+def parse_chromium_history(item: Dict[str, Any]) -> List[Dict[str, Any]]:
+    db_path = Path(item["WorkingDatabasePath"])
+    source = item["SourceDatabasePath"]
+    rows: List[Dict[str, Any]] = []
+    with connect_database(db_path) as conn:
+        if not table_exists(conn, "urls") or not table_exists(conn, "visits"):
+            return rows
+        query = """
+            SELECT visits.id AS visit_id, visits.visit_time AS visit_time,
+                   visits.visit_duration AS visit_duration, visits.transition AS transition,
+                   urls.url AS url, urls.title AS title, urls.visit_count AS visit_count,
+                   urls.typed_count AS typed_count, urls.hidden AS hidden
+            FROM visits JOIN urls ON visits.url = urls.id
+        """
+        for row in conn.execute(query):
+            duration = get_value(row, "visit_duration")
+            try:
+                duration_seconds = round(int(duration) / 1_000_000, 6) if duration != "" else ""
+            except (ValueError, TypeError):
+                duration_seconds = ""
+            rows.append({
+                "User": item["User"], "Browser": item["Browser"],
+                "VisitTimeUtc": chrome_time(get_value(row, "visit_time")),
+                "Url": get_value(row, "url"), "Title": get_value(row, "title"),
+                "VisitCount": get_value(row, "visit_count"), "TypedCount": get_value(row, "typed_count"),
+                "Transition": get_value(row, "transition"), "VisitDurationSeconds": duration_seconds,
+                "Hidden": get_value(row, "hidden"), "SourceDatabase": source,
+                "SourceRowId": get_value(row, "visit_id"), "Notes": "",
+            })
+    return rows
+
+def parse_chromium_downloads(item: Dict[str, Any]) -> List[Dict[str, Any]]:
+    db_path = Path(item["WorkingDatabasePath"])
+    rows: List[Dict[str, Any]] = []
+    with connect_database(db_path) as conn:
+        if not table_exists(conn, "downloads"):
+            return rows
+        download_columns = columns(conn, "downloads")
+        selected = [
+            "id AS id", select_expr(download_columns, "current_path"),
+            select_expr(download_columns, "target_path"), select_expr(download_columns, "start_time"),
+            select_expr(download_columns, "referrer"), select_expr(download_columns, "site_url"),
+            select_expr(download_columns, "tab_url"), select_expr(download_columns, "tab_referrer_url"),
+            select_expr(download_columns, "mime_type"), select_expr(download_columns, "original_mime_type"),
+            select_expr(download_columns, "received_bytes"), select_expr(download_columns, "total_bytes"),
+            select_expr(download_columns, "state"),
+        ]
+        for row in conn.execute(f"SELECT {', '.join(selected)} FROM downloads"):
+            download_id = get_value(row, "id")
+            urls: List[str] = []
+            if table_exists(conn, "downloads_url_chains"):
+                chain_cols = columns(conn, "downloads_url_chains")
+                id_col = "id" if "id" in chain_cols else "download_id" if "download_id" in chain_cols else None
+                if id_col and "url" in chain_cols:
+                    order_clause = " ORDER BY chain_index" if "chain_index" in chain_cols else ""
+                    urls = [
+                        chain["url"]
+                        for chain in conn.execute(f"SELECT url FROM downloads_url_chains WHERE {id_col} = ?{order_clause}", (download_id,))
+                        if chain["url"]
+                    ]
+            rows.append({
+                "User": item["User"], "Browser": item["Browser"],
+                "Time": chrome_time(get_value(row, "start_time")),
+                "DownloadUrl": " | ".join(urls), "TabUrl": get_value(row, "tab_url") or get_value(row, "site_url"),
+                "ReferrerUrl": get_value(row, "referrer") or get_value(row, "tab_referrer_url"),
+                "TargetPath": get_value(row, "target_path"), "CurrentPath": get_value(row, "current_path"),
+                "MimeType": get_value(row, "mime_type") or get_value(row, "original_mime_type"),
+                "ReceivedBytes": get_value(row, "received_bytes"), "TotalBytes": get_value(row, "total_bytes"),
+                "State": get_value(row, "state"),
+            })
+    return rows
+
+def parse_firefox_history(item: Dict[str, Any]) -> List[Dict[str, Any]]:
+    db_path = Path(item["WorkingDatabasePath"])
+    source = item["SourceDatabasePath"]
+    rows: List[Dict[str, Any]] = []
+    with connect_database(db_path) as conn:
+        if not table_exists(conn, "moz_places") or not table_exists(conn, "moz_historyvisits"):
+            return rows
+        query = """
+            SELECT moz_historyvisits.id AS visit_id, moz_historyvisits.visit_date AS visit_date,
+                   moz_historyvisits.visit_type AS visit_type, moz_places.url AS url,
+                   moz_places.title AS title, moz_places.visit_count AS visit_count,
+                   moz_places.hidden AS hidden
+            FROM moz_historyvisits JOIN moz_places ON moz_historyvisits.place_id = moz_places.id
+        """
+        for row in conn.execute(query):
+            rows.append({
+                "User": item["User"], "Browser": item["Browser"],
+                "VisitTimeUtc": firefox_time(get_value(row, "visit_date")),
+                "Url": get_value(row, "url"), "Title": get_value(row, "title"),
+                "VisitCount": get_value(row, "visit_count"), "TypedCount": "",
+                "Transition": get_value(row, "visit_type"), "VisitDurationSeconds": "",
+                "Hidden": get_value(row, "hidden"), "SourceDatabase": source,
+                "SourceRowId": get_value(row, "visit_id"), "Notes": "",
+            })
+    return rows
+
+def parse_firefox_downloads(item: Dict[str, Any]) -> List[Dict[str, Any]]:
+    db_path = Path(item["WorkingDatabasePath"])
+    rows: List[Dict[str, Any]] = []
+    with connect_database(db_path) as conn:
+        if not all(table_exists(conn, table) for table in ("moz_places", "moz_annos", "moz_anno_attributes")):
+            return rows
+        query = """
+            SELECT moz_places.id AS place_id, moz_places.url AS url, moz_places.title AS title,
+                   moz_anno_attributes.name AS anno_name, moz_annos.content AS content,
+                   moz_annos.dateAdded AS date_added, moz_annos.lastModified AS last_modified
+            FROM moz_annos
+            JOIN moz_anno_attributes ON moz_annos.anno_attribute_id = moz_anno_attributes.id
+            JOIN moz_places ON moz_annos.place_id = moz_places.id
+            WHERE moz_anno_attributes.name LIKE 'downloads/%'
+        """
+        grouped: Dict[Any, Dict[str, Any]] = {}
+        for row in conn.execute(query):
+            place_id = get_value(row, "place_id")
+            entry = grouped.setdefault(place_id, {
+                "url": get_value(row, "url"), "title": get_value(row, "title"),
+                "date_added": get_value(row, "date_added"), "last_modified": get_value(row, "last_modified"),
+                "annotations": {},
+            })
+            entry["annotations"][get_value(row, "anno_name")] = get_value(row, "content")
+        for place_id, entry in grouped.items():
+            annotations = entry["annotations"]
+            metadata: Dict[str, Any] = {}
+            metadata_raw = annotations.get("downloads/metaData", "")
+            if metadata_raw:
+                try:
+                    metadata = json.loads(metadata_raw)
+                except json.JSONDecodeError:
+                    metadata = {}
+            target = (
+                annotations.get("downloads/destinationFileURI")
+                or annotations.get("downloads/destinationFileName")
+                or metadata.get("targetFileURI")
+                or metadata.get("targetFilePath")
+                or ""
+            )
+            start_time = metadata.get("startTime") or entry.get("date_added")
+            rows.append({
+                "User": item["User"], "Browser": item["Browser"],
+                "Time": firefox_millis_time(start_time) if metadata.get("startTime") else firefox_time(start_time),
+                "DownloadUrl": entry.get("url", ""), "TabUrl": "", "ReferrerUrl": "",
+                "TargetPath": target, "CurrentPath": "", "MimeType": metadata.get("contentType", ""),
+                "ReceivedBytes": metadata.get("currBytes", ""), "TotalBytes": metadata.get("fileSize", ""),
+                "State": metadata.get("state", ""),
+            })
+    return rows
+
+def write_csv(path: Path, fields: Sequence[str], rows: Iterable[Dict[str, Any]]) -> int:
+    count = 0
+    with path.open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+            count += 1
+    return count
+
+def combined_rows(history_rows: List[Dict[str, Any]], download_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    combined: List[Dict[str, Any]] = []
+    for row in history_rows:
+        combined.append({
+            "RecordType": "History", "User": row["User"], "Browser": row["Browser"],
+            "Time": row["VisitTimeUtc"], "Url": row["Url"], "TitleOrPath": row["Title"],
+            "Details": f"transition={row['Transition']}; visit_count={row['VisitCount']}; typed_count={row['TypedCount']}",
+            "SourceDatabase": row["SourceDatabase"], "SourceRowId": row["SourceRowId"], "Notes": row["Notes"],
+        })
+    for row in download_rows:
+        combined.append({
+            "RecordType": "Download", "User": row["User"], "Browser": row["Browser"],
+            "Time": row["Time"], "Url": row["DownloadUrl"], "TitleOrPath": row["TargetPath"] or row["CurrentPath"],
+            "Details": f"state={row['State']}; received={row['ReceivedBytes']}; total={row['TotalBytes']}; mime={row['MimeType']}",
+            "SourceDatabase": "", "SourceRowId": "", "Notes": "",
+        })
+    combined.sort(key=lambda entry: entry["Time"] or "9999-12-31T23:59:59.999999Z")
+    return combined
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Export browser history and downloads from copied SQLite databases.")
+    parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    artifacts = json.loads(args.manifest.read_text(encoding="utf-8-sig"))
+    if isinstance(artifacts, dict):
+        artifacts = [artifacts]
+    history_rows: List[Dict[str, Any]] = []
+    download_rows: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
+    for item in artifacts:
+        try:
+            if item["Engine"] == "Chromium":
+                history_rows.extend(parse_chromium_history(item))
+                download_rows.extend(parse_chromium_downloads(item))
+            elif item["Engine"] == "Firefox":
+                history_rows.extend(parse_firefox_history(item))
+                download_rows.extend(parse_firefox_downloads(item))
+        except Exception as exc:
+            errors.append({
+                "User": item.get("User", ""), "Browser": item.get("Browser", ""),
+                "SourceDatabase": item.get("SourceDatabasePath", ""), "Error": repr(exc),
+            })
+    history_rows.sort(key=lambda row: row["VisitTimeUtc"] or "9999-12-31T23:59:59.999999Z")
+    download_rows.sort(key=lambda row: row["Time"] or "9999-12-31T23:59:59.999999Z")
+    history_count = write_csv(args.output / "BrowserHistory.csv", HISTORY_FIELDS, history_rows)
+    download_count = write_csv(args.output / "BrowserDownloads.csv", DOWNLOAD_FIELDS, download_rows)
+    combined_count = write_csv(args.output / "BrowserHistoryAndDownloads_All.csv", COMBINED_FIELDS, combined_rows(history_rows, download_rows))
+    error_count = write_csv(args.output / "BrowserHistoryExport_Errors.csv", ["User", "Browser", "SourceDatabase", "Error"], errors)
+    print(json.dumps({"history_rows": history_count, "download_rows": download_count, "combined_rows": combined_count, "errors": error_count}, indent=2))
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'@
+}
+
+# Copies browser databases to the run output and exports history/download CSVs from those copies.
+function Invoke-BrowserHistoryParser {
+    param([Parameter(Mandatory)][string]$TargetRoot)
+
+    $artifactKey = 'BrowserHistory'
+    $label = $script:Artifacts[$artifactKey].Label
+    $databases = @(Find-BrowserHistoryDatabases -TargetRoot $TargetRoot)
+    Write-FoundPaths -Artifact $label -Paths @($databases | ForEach-Object { $_.SourceDatabasePath })
+
+    if ($databases.Count -eq 0) {
+        Add-ArtifactResult -Artifact $label -Status 'Missing artifact' -Found 0 -Parsed 0
+        return
+    }
+
+    $python = Find-PythonRuntime
+    if (-not $python) {
+        Write-Status -Level 'ERROR' -Message "$label requires Python 3 for SQLite export, but Python 3 was not found on PATH or through the Python launcher."
+        Add-ArtifactResult -Artifact $label -Status 'Missing runtime' -Found $databases.Count -Parsed 0 -Detail 'Python 3 required'
+        return
+    }
+
+    $artifactOutput = Get-ArtifactOutputDirectory -ArtifactKey $artifactKey
+    $workingRoot = Join-Path $artifactOutput '_working'
+    New-Item -ItemType Directory -Path $workingRoot -Force | Out-Null
+
+    $copied = New-Object System.Collections.Generic.List[object]
+    $index = 0
+    foreach ($database in $databases) {
+        $index++
+        $safeUser = ConvertTo-SafeName -Name $database.User
+        $safeBrowser = ConvertTo-SafeName -Name $database.Browser
+        $safeProfile = ConvertTo-SafeName -Name $database.Profile
+        $copyFolder = Join-Path $workingRoot ('{0:D4}_{1}_{2}_{3}' -f $index, $safeUser, $safeBrowser, $safeProfile)
+        New-Item -ItemType Directory -Path $copyFolder -Force | Out-Null
+
+        $destination = Join-Path $copyFolder ([System.IO.Path]::GetFileName($database.SourceDatabasePath))
+        Copy-Item -LiteralPath $database.SourceDatabasePath -Destination $destination -Force
+        foreach ($suffix in @('-wal', '-shm')) {
+            $sidecar = "$($database.SourceDatabasePath)$suffix"
+            if (Test-Path -LiteralPath $sidecar -PathType Leaf) {
+                Copy-Item -LiteralPath $sidecar -Destination (Join-Path $copyFolder ([System.IO.Path]::GetFileName($sidecar))) -Force
+            }
+        }
+
+        $copied.Add([pscustomobject]@{
+            User                = $database.User
+            Browser             = $database.Browser
+            Engine              = $database.Engine
+            Profile             = $database.Profile
+            SourceDatabasePath  = $database.SourceDatabasePath
+            WorkingDatabasePath = $destination
+        }) | Out-Null
+
+        Write-Status -Message "$label copied for parsing: $($database.SourceDatabasePath) -> $destination"
+    }
+
+    $manifestPath = Join-Path $artifactOutput 'browser_manifest.json'
+    $copied | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+    $helperPath = Join-Path $artifactOutput '_BrowserHistoryExport.py'
+    Set-Content -LiteralPath $helperPath -Value (Get-BrowserHistoryExporterSource) -Encoding UTF8
+
+    Write-Status -Message ('Tool path: Python browser exporter => {0} {1}' -f $python.FilePath, ($python.PrefixArgs -join ' '))
+    $arguments = @()
+    $arguments += @($python.PrefixArgs)
+    $arguments += @($helperPath, '--manifest', $manifestPath, '--output', $artifactOutput)
+    $exitCode = Invoke-ExternalTool -ToolPath $python.FilePath -Arguments $arguments -WorkingDirectory $artifactOutput -LogPrefix 'BrowserHistory'
+
+    if (Test-Path -LiteralPath $workingRoot) {
+        try {
+            [System.IO.Directory]::Delete($workingRoot, $true)
+            Write-Status -Message "$label removed copied working databases."
+        }
+        catch {
+            Write-Status -Level 'WARN' -Message "$label could not remove copied working databases: $($_.Exception.Message)"
+        }
+    }
+
+    $historyCsv = Join-Path $artifactOutput 'BrowserHistory.csv'
+    $downloadsCsv = Join-Path $artifactOutput 'BrowserDownloads.csv'
+    $combinedCsv = Join-Path $artifactOutput 'BrowserHistoryAndDownloads_All.csv'
+    $errorsCsv = Join-Path $artifactOutput 'BrowserHistoryExport_Errors.csv'
+    $outputCsvs = @($historyCsv, $downloadsCsv, $combinedCsv) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+    $errorRows = 0
+    if (Test-Path -LiteralPath $errorsCsv -PathType Leaf) {
+        $errorRows = @((Import-Csv -LiteralPath $errorsCsv -ErrorAction SilentlyContinue)).Count
+    }
+
+    if ($exitCode -eq 0 -and $outputCsvs.Count -gt 0) {
+        $status = if ($errorRows -gt 0) { 'Partial failure' } else { 'Parsed' }
+        $detail = if ($errorRows -gt 0) { "$errorRows browser database error(s); see BrowserHistoryExport_Errors.csv" } else { 'CSV export complete' }
+        Add-ArtifactResult -Artifact $label -Status $status -Found $databases.Count -Parsed $databases.Count -Detail $detail
+        Write-Status -Level 'SUCCESS' -Message "$label export complete: $artifactOutput"
+    }
+    else {
+        Add-ArtifactResult -Artifact $label -Status 'Parser failed' -Found $databases.Count -Parsed 0 -Detail "Exit code $exitCode"
+        Write-Status -Level 'ERROR' -Message "$label exporter failed with exit code $exitCode"
     }
 }
 
@@ -762,6 +1403,15 @@ function Invoke-SelectedParsing {
         Write-Status -Message ("Custom EVTX paths: {0}" -f (($CustomEvtxPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join '; '))
     }
 
+    if ($SelectedArtifactKeys -contains 'EvtxAll') {
+        $focusedEvtxKeys = @('EvtxSecurity', 'EvtxSysmon', 'EvtxDefender', 'EvtxRdp')
+        $removedFocusedEvtx = @($SelectedArtifactKeys | Where-Object { $focusedEvtxKeys -contains $_ })
+        if ($removedFocusedEvtx.Count -gt 0) {
+            Write-Status -Level 'WARN' -Message ("EVTX - All logs folder selected; skipping overlapping focused EVTX selections: {0}" -f (($removedFocusedEvtx | ForEach-Object { $script:Artifacts[$_].Label }) -join ', '))
+            $SelectedArtifactKeys = @($SelectedArtifactKeys | Where-Object { $focusedEvtxKeys -notcontains $_ })
+        }
+    }
+
     $script:CurrentTools = Get-EzToolMap -ToolsRoot $ToolsRoot
     foreach ($toolName in ($script:Artifacts.Values | Where-Object Tool | Select-Object -ExpandProperty Tool -Unique)) {
         if ($script:CurrentTools.ContainsKey($toolName)) {
@@ -785,7 +1435,19 @@ function Invoke-SelectedParsing {
                 }
                 'UsnJournal' {
                     $paths = Find-ArtifactFiles -TargetRoot $TargetRoot -RelativeCandidates @('$Extend\$J') -FileNames @('$J')
-                    Invoke-FileParser -ArtifactKey $key -ToolName 'MFTECmd.exe' -Paths $paths -ArgumentBuilder { param($path, $out) @('-f', $path, '--csv', $out) }
+                    $mftForUsn = Find-ArtifactFiles -TargetRoot $TargetRoot -RelativeCandidates @('$MFT') -FileNames @('$MFT') | Select-Object -First 1
+                    $maxPaths = Find-ArtifactFiles -TargetRoot $TargetRoot -RelativeCandidates @('$Extend\$Max') -FileNames @('$Max')
+                    if ($maxPaths -and $maxPaths.Count -gt 0) {
+                        Write-FoundPaths -Artifact '$Extend\$Max / USN Journal metadata' -Paths $maxPaths
+                        Write-Status -Level 'WARN' -Message '$Extend\$Max was found. It stores USN journal metadata/settings, not the change records parsed into timeline CSV. MFTECmd parses $J for USN events.'
+                    }
+                    if ($mftForUsn) {
+                        Write-Status -Message "USN Journal: using `$MFT for parent path resolution: $mftForUsn"
+                    }
+                    Invoke-FileParser -ArtifactKey $key -ToolName 'MFTECmd.exe' -Paths $paths -ArgumentBuilder {
+                        param($path, $out)
+                        if ($mftForUsn) { @('-f', $path, '-m', $mftForUsn, '--csv', $out) } else { @('-f', $path, '--csv', $out) }
+                    }
                 }
                 'EvtxSecurity' {
                     $paths = Find-ArtifactFiles -TargetRoot $TargetRoot -RelativeCandidates @('Windows\System32\winevt\Logs\Security.evtx') -FileNames @('Security.evtx')
@@ -812,6 +1474,9 @@ function Invoke-SelectedParsing {
                         'Microsoft-Windows-RemoteConnectionManager*.evtx'
                     )
                     Invoke-FileParser -ArtifactKey $key -ToolName 'EvtxECmd.exe' -Paths $paths -ArgumentBuilder { param($path, $out) @('-f', $path, '--csv', $out) }
+                }
+                'EvtxAll' {
+                    Invoke-AllEvtxParser -TargetRoot $TargetRoot
                 }
                 'CustomEvtx' {
                     Invoke-CustomEvtxParser -CustomEvtxPaths $CustomEvtxPaths
@@ -845,7 +1510,7 @@ function Invoke-SelectedParsing {
                     $artifactOutput = Get-ArtifactOutputDirectory -ArtifactKey $key
                     $exitCode = Invoke-ExternalTool -ToolPath $script:CurrentTools['LECmd.exe'] -Arguments @('-d', $TargetRoot, '--csv', $artifactOutput) -WorkingDirectory $artifactOutput -LogPrefix 'LnkFiles'
                     $csvOutputCount = @(Get-ChildItem -LiteralPath $artifactOutput -Recurse -File -Filter '*.csv' -ErrorAction SilentlyContinue |
-                        Where-Object { $_.FullName -notmatch '\\_process_logs\\' }).Count
+                        Where-Object { $_.FullName -notmatch '\\Troubleshooting_Logs\\' }).Count
                     if ($exitCode -eq 0 -and $csvOutputCount -gt 0) {
                         Add-ArtifactResult -Artifact $label -Status 'Parsed' -Found $paths.Count -Parsed $paths.Count
                     }
@@ -930,6 +1595,9 @@ function Invoke-SelectedParsing {
                     $paths = Find-ArtifactDirectories -TargetRoot $TargetRoot -RelativeCandidates @('$Recycle.Bin') -DirectoryNames @('$Recycle.Bin')
                     Invoke-FileParser -ArtifactKey $key -ToolName 'RBCmd.exe' -Paths $paths -ArgumentBuilder { param($path, $out) @('-d', $path, '--csv', $out) }
                 }
+                'BrowserHistory' {
+                    Invoke-BrowserHistoryParser -TargetRoot $TargetRoot
+                }
             }
         }
         catch {
@@ -1005,6 +1673,73 @@ function Add-CustomEvtxPath {
 
     [void]$script:lstCustomEvtx.Items.Add($resolvedPath)
     $script:ArtifactCheckboxes['CustomEvtx'].Checked = $true
+    Set-CustomEvtxControlsEnabled -Enabled $true
+}
+
+# Enables or fades custom EVTX controls based on the local Custom EVTX checkbox.
+function Set-CustomEvtxControlsEnabled {
+    param([Parameter(Mandatory)][bool]$Enabled)
+
+    $controls = @(
+        $script:customEvtxLabel,
+        $script:lstCustomEvtx,
+        $script:btnBrowseEvtxFile,
+        $script:btnBrowseEvtxFolder,
+        $script:btnRemoveEvtxPath,
+        $script:btnClearEvtxPaths
+    ) | Where-Object { $null -ne $_ }
+
+    foreach ($control in $controls) {
+        $control.Enabled = $Enabled
+    }
+
+    if ($script:lstCustomEvtx) {
+        if ($Enabled) {
+            $script:lstCustomEvtx.BackColor = $script:Theme.Input
+            $script:lstCustomEvtx.ForeColor = $script:Theme.Text
+        }
+        else {
+            $script:lstCustomEvtx.BackColor = $script:Theme.PanelAlt
+            $script:lstCustomEvtx.ForeColor = $script:Theme.Muted
+        }
+    }
+}
+
+# Keeps the all-EVTX option from duplicating the focused EVTX parsers.
+function Set-EvtxAllMode {
+    param([Parameter(Mandatory)][bool]$Enabled)
+
+    $focusedEvtxKeys = @('EvtxSecurity', 'EvtxSysmon', 'EvtxDefender', 'EvtxRdp')
+    foreach ($key in $focusedEvtxKeys) {
+        if (-not $script:ArtifactCheckboxes.ContainsKey($key)) {
+            continue
+        }
+
+        $checkBox = $script:ArtifactCheckboxes[$key]
+        if ($Enabled) {
+            $checkBox.Checked = $false
+            $checkBox.Enabled = $false
+            $checkBox.ForeColor = $script:Theme.Muted
+        }
+        else {
+            $checkBox.Enabled = $true
+            $checkBox.ForeColor = $script:Theme.Text
+        }
+    }
+
+    if ($script:ArtifactCheckboxes.ContainsKey('CustomEvtx')) {
+        $customCheckBox = $script:ArtifactCheckboxes['CustomEvtx']
+        if ($Enabled) {
+            $customCheckBox.Checked = $false
+            $customCheckBox.Enabled = $false
+            $customCheckBox.ForeColor = $script:Theme.Muted
+            Set-CustomEvtxControlsEnabled -Enabled $false
+        }
+        else {
+            $customCheckBox.Enabled = $true
+            $customCheckBox.ForeColor = $script:Theme.Text
+        }
+    }
 }
 
 # Returns all custom EVTX paths currently listed in the GUI.
@@ -1045,6 +1780,7 @@ function New-ParserForm {
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'DFIR-Timeline-Parser'
     $form.StartPosition = 'CenterScreen'
+    $form.ShowIcon = $false
     $form.Size = New-Object System.Drawing.Size(1120, 940)
     $form.MinimumSize = New-Object System.Drawing.Size(1020, 800)
 
@@ -1053,7 +1789,7 @@ function New-ParserForm {
     $mainPanel.ColumnCount = 1
     $mainPanel.RowCount = 6
     $mainPanel.Padding = New-Object System.Windows.Forms.Padding(10)
-    $mainPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 120))) | Out-Null
+    $mainPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 154))) | Out-Null
     $mainPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 270))) | Out-Null
     $mainPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 128))) | Out-Null
     $mainPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 48))) | Out-Null
@@ -1064,7 +1800,7 @@ function New-ParserForm {
     $pathGrid = New-Object System.Windows.Forms.TableLayoutPanel
     $pathGrid.Dock = 'Fill'
     $pathGrid.ColumnCount = 3
-    $pathGrid.RowCount = 3
+    $pathGrid.RowCount = 4
     $pathGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 170))) | Out-Null
     $pathGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) | Out-Null
     $pathGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 150))) | Out-Null
@@ -1104,6 +1840,11 @@ function New-ParserForm {
         }
     }
 
+    $script:btnDownload = New-Object System.Windows.Forms.Button
+    $script:btnDownload.Text = 'Download/Update EZ Tools'
+    $script:btnDownload.Dock = 'Fill'
+    $pathGrid.Controls.Add($script:btnDownload, 2, 3)
+
     $script:txtTarget = $textBoxes[0]
     $script:txtOutput = $textBoxes[1]
     $script:txtTools = $textBoxes[2]
@@ -1134,6 +1875,10 @@ function New-ParserForm {
     $script:ArtifactCheckboxes = @{}
     $index = 0
     foreach ($key in $script:Artifacts.Keys) {
+        if ($key -eq 'CustomEvtx') {
+            continue
+        }
+
         $checkBox = New-Object System.Windows.Forms.CheckBox
         $checkBox.Text = $script:Artifacts[$key].Label
         $checkBox.Checked = [bool]$script:Artifacts[$key].Default
@@ -1153,8 +1898,9 @@ function New-ParserForm {
     $customEvtxLayout = New-Object System.Windows.Forms.TableLayoutPanel
     $customEvtxLayout.Dock = 'Fill'
     $customEvtxLayout.ColumnCount = 5
-    $customEvtxLayout.RowCount = 2
+    $customEvtxLayout.RowCount = 3
     $customEvtxLayout.Padding = New-Object System.Windows.Forms.Padding(8)
+    $customEvtxLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 28))) | Out-Null
     $customEvtxLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) | Out-Null
     $customEvtxLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 34))) | Out-Null
     $customEvtxLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 130))) | Out-Null
@@ -1164,37 +1910,47 @@ function New-ParserForm {
     $customEvtxLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 118))) | Out-Null
     $customEvtxGroup.Controls.Add($customEvtxLayout)
 
-    $customEvtxLabel = New-Object System.Windows.Forms.Label
-    $customEvtxLabel.Text = 'EVTX paths'
-    $customEvtxLabel.Dock = 'Fill'
-    $customEvtxLabel.TextAlign = 'MiddleLeft'
-    $customEvtxLayout.Controls.Add($customEvtxLabel, 0, 0)
+    $script:chkCustomEvtx = New-Object System.Windows.Forms.CheckBox
+    $script:chkCustomEvtx.Text = $script:Artifacts['CustomEvtx'].Label
+    $script:chkCustomEvtx.Checked = [bool]$script:Artifacts['CustomEvtx'].Default
+    $script:chkCustomEvtx.AutoSize = $true
+    $script:chkCustomEvtx.Tag = 'CustomEvtx'
+    $script:chkCustomEvtx.Margin = New-Object System.Windows.Forms.Padding(6, 3, 6, 3)
+    $script:ArtifactCheckboxes['CustomEvtx'] = $script:chkCustomEvtx
+    $customEvtxLayout.Controls.Add($script:chkCustomEvtx, 0, 0)
+    $customEvtxLayout.SetColumnSpan($script:chkCustomEvtx, 5)
+
+    $script:customEvtxLabel = New-Object System.Windows.Forms.Label
+    $script:customEvtxLabel.Text = 'EVTX paths'
+    $script:customEvtxLabel.Dock = 'Fill'
+    $script:customEvtxLabel.TextAlign = 'MiddleLeft'
+    $customEvtxLayout.Controls.Add($script:customEvtxLabel, 0, 1)
 
     $script:lstCustomEvtx = New-Object System.Windows.Forms.ListBox
     $script:lstCustomEvtx.Dock = 'Fill'
     $script:lstCustomEvtx.HorizontalScrollbar = $true
-    $customEvtxLayout.Controls.Add($script:lstCustomEvtx, 1, 0)
+    $customEvtxLayout.Controls.Add($script:lstCustomEvtx, 1, 1)
     $customEvtxLayout.SetColumnSpan($script:lstCustomEvtx, 4)
 
     $script:btnBrowseEvtxFile = New-Object System.Windows.Forms.Button
     $script:btnBrowseEvtxFile.Text = 'Add EVTX File'
     $script:btnBrowseEvtxFile.Dock = 'Fill'
-    $customEvtxLayout.Controls.Add($script:btnBrowseEvtxFile, 1, 1)
+    $customEvtxLayout.Controls.Add($script:btnBrowseEvtxFile, 1, 2)
 
     $script:btnBrowseEvtxFolder = New-Object System.Windows.Forms.Button
     $script:btnBrowseEvtxFolder.Text = 'Add EVTX Folder'
     $script:btnBrowseEvtxFolder.Dock = 'Fill'
-    $customEvtxLayout.Controls.Add($script:btnBrowseEvtxFolder, 2, 1)
+    $customEvtxLayout.Controls.Add($script:btnBrowseEvtxFolder, 2, 2)
 
     $script:btnRemoveEvtxPath = New-Object System.Windows.Forms.Button
     $script:btnRemoveEvtxPath.Text = 'Remove Selected'
     $script:btnRemoveEvtxPath.Dock = 'Fill'
-    $customEvtxLayout.Controls.Add($script:btnRemoveEvtxPath, 3, 1)
+    $customEvtxLayout.Controls.Add($script:btnRemoveEvtxPath, 3, 2)
 
     $script:btnClearEvtxPaths = New-Object System.Windows.Forms.Button
     $script:btnClearEvtxPaths.Text = 'Clear'
     $script:btnClearEvtxPaths.Dock = 'Fill'
-    $customEvtxLayout.Controls.Add($script:btnClearEvtxPaths, 4, 1)
+    $customEvtxLayout.Controls.Add($script:btnClearEvtxPaths, 4, 2)
 
     $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
     $buttonPanel.Dock = 'Fill'
@@ -1210,12 +1966,6 @@ function New-ParserForm {
     $script:btnStart.FlatStyle = 'Standard'
     $script:btnStart.Font = New-Object System.Drawing.Font($script:btnStart.Font, [System.Drawing.FontStyle]::Bold)
     $buttonPanel.Controls.Add($script:btnStart)
-
-    $script:btnDownload = New-Object System.Windows.Forms.Button
-    $script:btnDownload.Text = 'Download/Update EZ Tools'
-    $script:btnDownload.Width = 180
-    $script:btnDownload.Height = 34
-    $buttonPanel.Controls.Add($script:btnDownload)
 
     $script:btnOpenOutput = New-Object System.Windows.Forms.Button
     $script:btnOpenOutput.Text = 'Open Output Folder'
@@ -1237,6 +1987,10 @@ function New-ParserForm {
     $script:lblStatus.Text = 'Ready.'
     $mainPanel.Controls.Add($script:lblStatus, 0, 5)
 
+    $script:chkCustomEvtx.Add_CheckedChanged({
+        Set-CustomEvtxControlsEnabled -Enabled $script:chkCustomEvtx.Checked
+    })
+
     $script:btnBrowseEvtxFile.Add_Click({
         Select-EvtxFilesForListBox
     })
@@ -1256,12 +2010,18 @@ function New-ParserForm {
         }
         if ($script:lstCustomEvtx.Items.Count -eq 0) {
             $script:ArtifactCheckboxes['CustomEvtx'].Checked = $false
+            Set-CustomEvtxControlsEnabled -Enabled $false
         }
     })
 
     $script:btnClearEvtxPaths.Add_Click({
         $script:lstCustomEvtx.Items.Clear()
         $script:ArtifactCheckboxes['CustomEvtx'].Checked = $false
+        Set-CustomEvtxControlsEnabled -Enabled $false
+    })
+
+    $script:ArtifactCheckboxes['EvtxAll'].Add_CheckedChanged({
+        Set-EvtxAllMode -Enabled $script:ArtifactCheckboxes['EvtxAll'].Checked
     })
 
     $script:btnOpenOutput.Add_Click({
@@ -1400,8 +2160,14 @@ function New-ParserForm {
         }
     })
 
+    Set-ControlTheme -Control $form
+    Set-CustomEvtxControlsEnabled -Enabled $script:chkCustomEvtx.Checked
+    Set-EvtxAllMode -Enabled $script:ArtifactCheckboxes['EvtxAll'].Checked
+
     return $form
 }
 
 $form = New-ParserForm
 [void][System.Windows.Forms.Application]::Run($form)
+
+

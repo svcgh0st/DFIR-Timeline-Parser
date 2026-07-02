@@ -1,4 +1,4 @@
-# DFIR-Timeline-Parser
+﻿# DFIR-Timeline-Parser
 
 Windows Forms PowerShell GUI for parsing an extracted or mounted Windows target with Eric Zimmerman tools and writing CSV output for Timeline Explorer.
 
@@ -58,9 +58,23 @@ When you use **Browse Tools** or start a parse, the selected EZ Tools path is sa
 
 ## Parsing Custom Event Logs
 
-Use the **EVTX - Custom file/folder** checkbox.
+To parse the entire standard Windows event log folder from the selected target, tick:
 
-Then use the custom EVTX buttons underneath the artifact checklist:
+```text
+EVTX - All logs folder
+```
+
+This automatically parses every `.evtx` file under:
+
+```text
+Windows\System32\winevt\Logs
+```
+
+When **EVTX - All logs folder** is selected, the focused EVTX checkboxes for Security, Sysmon, Windows Defender, and RDP/Terminal Services are disabled to avoid parsing the same logs twice. The Custom EVTX input is also disabled because All Logs and Custom EVTX are mutually exclusive modes.
+
+Use the **EVTX - Custom file/folder** checkbox inside the **Custom EVTX input** section.
+
+The custom EVTX path list and buttons stay disabled until that checkbox is selected. Then use:
 
 - **Add EVTX File** to add one or more `.evtx` files.
 - **Add EVTX Folder** to add a folder.
@@ -79,7 +93,9 @@ inside the selected output folder.
 
 ## Artifact Tool Coverage
 
-Every GUI checkbox maps to a configured Eric Zimmerman command-line tool. Options without a configured parser are not exposed as artifact checkboxes.
+Most GUI checkboxes map to a configured Eric Zimmerman command-line tool. Options without a configured parser are not exposed as artifact checkboxes.
+
+Browser history is selected by default and is the exception: it uses the integrated SQLite exporter because browser history databases are not parsed by the configured EZ Tools command set. The exporter copies Chrome, Edge, Brave, Chromium, Vivaldi, Opera, Opera GX, and Firefox browser databases into the run output folder first, parses those copies, and does not modify the evidence/source folder. Python 3 is required for this artifact.
 
 Optional checkbox mappings:
 
@@ -88,6 +104,7 @@ Optional checkbox mappings:
 - Shellbags, RecentDocs, UserAssist, Run keys, Services, and Scheduled Tasks registry data: `RECmd.exe`
 - SRUM: `SrumECmd.exe`
 - Recycle Bin: `RBCmd.exe`
+- Browser history: integrated SQLite exporter with Python 3
 
 ## MFT Note
 
@@ -100,6 +117,18 @@ work\dotnet9
 ```
 
 The GUI script auto-detects that runtime so the .NET 9 MFTECmd build can parse large MFTs without requiring a system-wide .NET install.
+
+## USN Journal Note
+
+The USN Journal parser targets:
+
+```text
+$Extend\$J
+```
+
+`$J` contains the USN change records that MFTECmd exports to timeline-friendly CSV. When `$MFT` is available, the GUI passes it to MFTECmd with `-m` so USN output can include better parent path resolution.
+
+The companion `$Extend\$Max` stream contains USN journal metadata/settings. The GUI logs when `$Max` is present, but it is not exported as event records because it does not contain the `$J` change journal timeline data.
 
 ## Outputs
 
@@ -123,6 +152,7 @@ The log records selected artifacts, paths found, tools used, commands executed, 
 | `EvtxSysmon` | Sysmon Operational EVTX | `EvtxECmd.exe` |
 | `EvtxDefender` | Windows Defender Operational EVTX | `EvtxECmd.exe` |
 | `EvtxRdp` | RDP / Terminal Services EVTX logs | `EvtxECmd.exe` |
+| `EvtxAll` | All `.evtx` files under `Windows\System32\winevt\Logs` | `EvtxECmd.exe` |
 | `CustomEvtx` | Analyst-selected EVTX files or folders | `EvtxECmd.exe` |
 | `Prefetch` | Windows Prefetch | `PECmd.exe` |
 | `ShimCache` | ShimCache from `SYSTEM` hive | `AppCompatCacheParser.exe` |
@@ -137,8 +167,35 @@ The log records selected artifacts, paths found, tools used, commands executed, 
 | `ScheduledTasks` | TaskCache registry keys | `RECmd.exe` |
 | `Srum` | `SRUDB.dat` | `SrumECmd.exe` |
 | `RecycleBin` | `$Recycle.Bin` | `RBCmd.exe` |
-| `_process_logs` | Captured parser stdout/stderr | Created by this wrapper |
+| `BrowserHistory` | Browser history and downloads | Integrated SQLite exporter |
+| `Troubleshooting_Logs` | Captured parser stdout/stderr troubleshooting logs | Created by this wrapper |
+
+## Browser History Outputs
+
+When selected, browser history output is written under:
+
+```text
+BrowserHistory
+```
+
+Files created:
+
+- `BrowserHistory.csv`
+- `BrowserDownloads.csv`
+- `BrowserHistoryAndDownloads_All.csv`
+- `BrowserHistoryExport_Errors.csv`
+- `browser_manifest.json`
+
+`BrowserDownloads.csv` columns:
+
+```text
+User,Browser,Time,DownloadUrl,TabUrl,ReferrerUrl,TargetPath,CurrentPath
+```
+
+Browser times are exported in UTC with a trailing `Z`.
 
 ## Credits
 
-This project is a PowerShell GUI wrapper around Eric Zimmerman's forensic tools. The parsing work is performed by the EZ Tools executables selected in the GUI. Credit and thanks to Eric Zimmerman for creating and maintaining those tools.
+This project is primarily a PowerShell GUI wrapper around Eric Zimmerman's forensic tools. Credit and thanks to Eric Zimmerman for creating and maintaining EZ Tools. The optional browser-history workflow uses an integrated SQLite exporter because that artifact family is outside the configured EZ Tools parser set.
+
+
